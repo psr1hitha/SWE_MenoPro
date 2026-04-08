@@ -8,6 +8,7 @@
 import SwiftUI
 
 struct SignUpView: View {
+    @Environment(\.presentationMode) var presentationMode
     @State private var firstName = ""
     @State private var lastName = ""
     @State private var email = ""
@@ -134,6 +135,7 @@ struct SignUpView: View {
                         SecureField("Password (min. 7 characters)", text: $password)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 12)
+                            .textContentType(.none)
                         if !password.isEmpty && !isPasswordValid {
                             rowDivider()
                             Text("Password must be at least 7 characters")
@@ -146,6 +148,7 @@ struct SignUpView: View {
                         SecureField("Confirm Password", text: $confirmPassword)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 12)
+                            .textContentType(.none)
                         if !confirmPassword.isEmpty && password != confirmPassword {
                             rowDivider()
                             Text("Passwords do not match")
@@ -247,7 +250,36 @@ struct SignUpView: View {
                     
                     // MARK: - Sign Up Button
                     Button(action: {
-                        // API connection later
+                        guard let ageInt = Int(age),
+                              let heightDouble = Double(height),
+                              let weightDouble = Double(weight) else { return }
+                        
+                        let heightInMeters = heightUnit == "cm" ? heightDouble / 100 : heightDouble * 0.3048
+                        let weightInKg = weightUnit == "kg" ? weightDouble : weightDouble * 0.453592
+                        let bmiValue = weightInKg / (heightInMeters * heightInMeters)
+                        
+                        APIService.shared.signUp(
+                            firstName: firstName,
+                            lastName: lastName,
+                            email: email,
+                            password: password,
+                            age: ageInt,
+                            bmi: bmiValue,
+                            isSmoker: isSmoker,
+                            alcoholPerWeek: alcoholPerWeek,
+                            caffeinePerWeek: caffeinePerWeek,
+                            race: selectedRace
+                        ) { success, message in
+                            DispatchQueue.main.async {
+                                if success {
+                                    print("Signup successful!")
+                                    // Navigate back to login
+                                    presentationMode.wrappedValue.dismiss()
+                                } else {
+                                    print("Signup failed: \(message)")
+                                }
+                            }
+                        }
                     }) {
                         Text("Sign Up")
                             .frame(maxWidth: .infinity)

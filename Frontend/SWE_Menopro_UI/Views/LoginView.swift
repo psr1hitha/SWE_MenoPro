@@ -27,9 +27,18 @@ struct LoginView: View {
                 
                 SecureField("Password", text: $password)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .textContentType(.none)
                 
                 Button("Login") {
-                    isLoggedIn = true
+                    APIService.shared.login(email: email, password: password) { success, message in
+                        DispatchQueue.main.async {
+                            if success {
+                                isLoggedIn = true
+                            } else {
+                                print("Login failed: \(message)")
+                            }
+                        }
+                    }
                 }
                 .frame(maxWidth: .infinity)
                 .padding()

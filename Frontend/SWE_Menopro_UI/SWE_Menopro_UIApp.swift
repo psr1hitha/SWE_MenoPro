@@ -11,7 +11,7 @@ import SwiftUI
 struct SWE_Menopro_UIApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            LoginView()
         }
     }
 }

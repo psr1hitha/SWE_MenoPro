@@ -1,7 +1,11 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 import firebase_admin
 from firebase_admin import credentials, firestore
+import jwt
+import datetime
+from typing import Optional
 
 # Initialize Firebase
 cred = credentials.Certificate("serviceAccount.json")
@@ -10,7 +14,9 @@ db = firestore.client()
 
 app = FastAPI()
 
-# Sign up request structure
+SECRET_KEY = "menopro-secret-key"
+security = HTTPBearer()
+
 class SignUpRequest(BaseModel):
     first_name: str
     last_name: str
@@ -23,27 +29,56 @@ class SignUpRequest(BaseModel):
     caffeine_per_week: int
     race: str
 
-# Login request structure
 class LoginRequest(BaseModel):
     email: str
     password: str
 
-# Test root
+class UpdateProfileRequest(BaseModel):
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    age: Optional[int] = None
+    bmi: Optional[float] = None
+    is_smoker: Optional[bool] = None
+    alcohol_per_week: Optional[int] = None
+    caffeine_per_week: Optional[int] = None
+    race: Optional[str] = None
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+def create_token(email: str) -> str:
+    payload = {
+        "email": email,
+        "exp": datetime.datetime.utcnow() + datetime.timedelta(days=30)
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    try:
+        payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=["HS256"])
+        return payload["email"]
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+def get_user_doc(email: str):
+    users = db.collection("users").where("email", "==", email).get()
+    if not users:
+        raise HTTPException(status_code=404, detail="User not found")
+    return users[0]
+
 @app.get("/")
 def root():
     return {"message": "Menopro API is running!"}
 
-# Sign up API
 @app.post("/signup")
 def signup(data: SignUpRequest):
-    # Check if email already exists
-    users_ref = db.collection("users")
-    existing = users_ref.where("email", "==", data.email).get()
+    existing = db.collection("users").where("email", "==", data.email).get()
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
-    
-    # Save to Firestore
-    users_ref.add({
+    db.collection("users").add({
         "first_name": data.first_name,
         "last_name": data.last_name,
         "email": data.email,
@@ -55,24 +90,43 @@ def signup(data: SignUpRequest):
         "caffeine_per_week": data.caffeine_per_week,
         "race": data.race
     })
-    return {"message": "Signup successful", "email": data.email}
+    token = create_token(data.email)
+    return {"message": "Signup successful", "token": token}
 
-# Login API
 @app.post("/login")
 def login(data: LoginRequest):
-    # Find user by email
-    users_ref = db.collection("users")
-    users = users_ref.where("email", "==", data.email).get()
-    
+    users = db.collection("users").where("email", "==", data.email).get()
     if not users:
         raise HTTPException(status_code=404, detail="User not found")
-    
     user = users[0].to_dict()
-    
     if user["password"] != data.password:
         raise HTTPException(status_code=401, detail="Incorrect password")
-    
-    return {"message": "Login successful", "email": data.email}
+    token = create_token(data.email)
+    return {"message": "Login successful", "token": token}
 
-#444
+@app.get("/profile")
+def get_profile(email: str = Depends(get_current_user)):
+    doc = get_user_doc(email)
+    data = doc.to_dict()
+    data.pop("password", None)
+    return data
 
+@app.patch("/profile")
+def update_profile(data: UpdateProfileRequest, email: str = Depends(get_current_user)):
+    doc = get_user_doc(email)
+    updates = {k: v for k, v in data.dict().items() if v is not None}
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    doc.reference.update(updates)
+    return {"message": "Profile updated successfully"}
+
+@app.post("/change-password")
+def change_password(data: ChangePasswordRequest, email: str = Depends(get_current_user)):
+    doc = get_user_doc(email)
+    user = doc.to_dict()
+    if user["password"] != data.current_password:
+        raise HTTPException(status_code=401, detail="Current password is incorrect")
+    if len(data.new_password) < 7:
+        raise HTTPException(status_code=400, detail="Password must be at least 7 characters")
+    doc.reference.update({"password": data.new_password})
+    return {"message": "Password changed successfully"}

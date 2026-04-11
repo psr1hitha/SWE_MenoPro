@@ -11,24 +11,25 @@ struct HomeView: View {
     
     var body: some View {
         NavigationView {
-            VStack(spacing: 20) {
-                DatePicker(
-                    "",
-                    selection: $selectedDate,
-                    displayedComponents: .date
-                )
-                .datePickerStyle(.graphical)
-                .tint(.purple)
-                .padding(.horizontal, 16)
+            ZStack {
+                Color.appBackground
+                    .ignoresSafeArea()
                 
-                Spacer()
+                VStack(spacing: 20) {
+                    DatePicker(
+                        "",
+                        selection: $selectedDate,
+                        displayedComponents: .date
+                    )
+                    .datePickerStyle(.graphical)
+                    .tint(.appPoint) // Updated color
+                    .padding(.horizontal, 16)
+                    
+                    Spacer()
+                }
             }
             .navigationTitle("Menopro")
             .navigationBarTitleDisplayMode(.large)
         }
     }
-}
-
-#Preview {
-    HomeView()
 }

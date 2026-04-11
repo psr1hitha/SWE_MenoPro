@@ -24,6 +24,7 @@ struct SignUpView: View {
     @State private var alcoholPerWeek = 0
     @State private var caffeinePerWeek = 0
     @State private var selectedRace = "Prefer not to say"
+    @State private var hasAgreedToTerms = false
     
     let races = [
         "Prefer not to say",
@@ -79,10 +80,10 @@ struct SignUpView: View {
         !age.isEmpty &&
         !height.isEmpty &&
         !weight.isEmpty &&
-        selectedRace != "Prefer not to say"
+        hasAgreedToTerms
     }
     
-    // 섹션 헤더 스타일
+    // Section header style
     func sectionHeader(_ title: String) -> some View {
         Text(title)
             .font(.caption)
@@ -94,7 +95,7 @@ struct SignUpView: View {
             .padding(.bottom, 4)
     }
     
-    // 입력 칸 스타일
+    // Input card style
     func inputCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         VStack(spacing: 0) {
             content()
@@ -104,7 +105,7 @@ struct SignUpView: View {
         .padding(.horizontal, 16)
     }
     
-    // 행 스타일
+    // Row divider style
     func rowDivider() -> some View {
         Divider()
             .padding(.leading, 16)
@@ -135,7 +136,8 @@ struct SignUpView: View {
                         SecureField("Password (min. 7 characters)", text: $password)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 12)
-                            .textContentType(.none)
+                            .textContentType(.oneTimeCode)  // 자동완성 팝업 차단
+                            .autocorrectionDisabled()
                         if !password.isEmpty && !isPasswordValid {
                             rowDivider()
                             Text("Password must be at least 7 characters")
@@ -148,7 +150,8 @@ struct SignUpView: View {
                         SecureField("Confirm Password", text: $confirmPassword)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 12)
-                            .textContentType(.none)
+                            .textContentType(.oneTimeCode)
+                            .autocorrectionDisabled()
                         if !confirmPassword.isEmpty && password != confirmPassword {
                             rowDivider()
                             Text("Passwords do not match")
@@ -205,7 +208,7 @@ struct SignUpView: View {
                     sectionHeader("LIFESTYLE")
                     inputCard {
                         Toggle("Smoker", isOn: $isSmoker)
-                            .tint(.purple)
+                            .tint(.appPoint)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 12)
                         rowDivider()
@@ -248,6 +251,36 @@ struct SignUpView: View {
                         .padding(.vertical, 12)
                     }
                     
+                    // MARK: - Privacy Disclaimer  
+                                        VStack(alignment: .leading, spacing: 10) {
+                                            Text("⚠️ Entering inaccurate information may result in less accurate predictions.")
+                                                .font(.subheadline)
+                                                .fontWeight(.bold)
+                                                .foregroundColor(.appPoint)
+                                                .padding(.horizontal, 20)
+                                                .padding(.top, 16)
+
+                                            Text("Your health information is used solely for symptom prediction and personalized services, and will not be shared with third parties.")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                                .padding(.horizontal, 20)
+
+                                            HStack(alignment: .top, spacing: 10) {
+                                                Button(action: {
+                                                    hasAgreedToTerms.toggle()
+                                                }) {
+                                                    Image(systemName: hasAgreedToTerms ? "checkmark.square.fill" : "square")
+                                                        .foregroundColor(hasAgreedToTerms ? .appPoint : .secondary)
+                                                        .font(.system(size: 20))
+                                                }
+                                                Text("I have read the above and understand that entering inaccurate information may reduce prediction accuracy.")
+                                                    .font(.caption)
+                                                    .foregroundColor(.primary)
+                                            }
+                                            .padding(.horizontal, 20)
+                                            .padding(.bottom, 8)
+                                        }
+                    
                     // MARK: - Sign Up Button
                     Button(action: {
                         guard let ageInt = Int(age),
@@ -284,7 +317,7 @@ struct SignUpView: View {
                         Text("Sign Up")
                             .frame(maxWidth: .infinity)
                             .padding()
-                            .background(isFormValid ? Color.purple : Color.gray)
+                            .background(isFormValid ? Color.appPoint : Color.gray)
                             .foregroundColor(.white)
                             .cornerRadius(10)
                     }
@@ -305,7 +338,7 @@ struct SignUpView: View {
                         .offset(x: -120)
                 }
             }
-            .accentColor(.purple)
+            .accentColor(.appPoint)
         }
     }
 }

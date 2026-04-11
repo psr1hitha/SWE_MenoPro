@@ -7,11 +7,12 @@
 
 import SwiftUI
 
+
 @main
 struct SWE_Menopro_UIApp: App {
     var body: some Scene {
         WindowGroup {
-            LoginView()
+            SplashView() 
         }
     }
 }

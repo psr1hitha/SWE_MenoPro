@@ -14,9 +14,10 @@ db = firestore.client()
 
 app = FastAPI()
 
-SECRET_KEY = "menopro-secret-key"
+SECRET_KEY = "menopro-secret-key"  
 security = HTTPBearer()
 
+# ── Models ───
 class SignUpRequest(BaseModel):
     first_name: str
     last_name: str
@@ -47,6 +48,7 @@ class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str
 
+# ── JWT helpers ───
 def create_token(email: str) -> str:
     payload = {
         "email": email,
@@ -69,15 +71,18 @@ def get_user_doc(email: str):
         raise HTTPException(status_code=404, detail="User not found")
     return users[0]
 
+# ── Root ────
 @app.get("/")
 def root():
     return {"message": "Menopro API is running!"}
 
+# ── Sign up ────
 @app.post("/signup")
 def signup(data: SignUpRequest):
     existing = db.collection("users").where("email", "==", data.email).get()
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
+
     db.collection("users").add({
         "first_name": data.first_name,
         "last_name": data.last_name,
@@ -93,24 +98,29 @@ def signup(data: SignUpRequest):
     token = create_token(data.email)
     return {"message": "Signup successful", "token": token}
 
+# ── Login ────
 @app.post("/login")
 def login(data: LoginRequest):
     users = db.collection("users").where("email", "==", data.email).get()
     if not users:
         raise HTTPException(status_code=404, detail="User not found")
+
     user = users[0].to_dict()
     if user["password"] != data.password:
         raise HTTPException(status_code=401, detail="Incorrect password")
-    token = create_token(data.email)
-    return {"message": "Login successful", "token": token}
 
+    token = create_token(data.email)
+    return {"message": "Login successful", "token": token}  
+
+# ── Get profile ────
 @app.get("/profile")
 def get_profile(email: str = Depends(get_current_user)):
     doc = get_user_doc(email)
     data = doc.to_dict()
-    data.pop("password", None)
+    data.pop("password", None)  
     return data
 
+# ── Update profile ────
 @app.patch("/profile")
 def update_profile(data: UpdateProfileRequest, email: str = Depends(get_current_user)):
     doc = get_user_doc(email)
@@ -120,13 +130,18 @@ def update_profile(data: UpdateProfileRequest, email: str = Depends(get_current_
     doc.reference.update(updates)
     return {"message": "Profile updated successfully"}
 
+# ── Change password ───
 @app.post("/change-password")
 def change_password(data: ChangePasswordRequest, email: str = Depends(get_current_user)):
     doc = get_user_doc(email)
     user = doc.to_dict()
+
     if user["password"] != data.current_password:
         raise HTTPException(status_code=401, detail="Current password is incorrect")
     if len(data.new_password) < 7:
         raise HTTPException(status_code=400, detail="Password must be at least 7 characters")
+
     doc.reference.update({"password": data.new_password})
     return {"message": "Password changed successfully"}
+
+

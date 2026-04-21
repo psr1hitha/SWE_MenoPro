@@ -295,7 +295,17 @@ def generate_subject(
         skin_temp += 0.2
 
     # ── Flash event simulation ──
+    # State machine: IDLE -> BUILDUP -> FLASH -> COOLDOWN -> IDLE
+    # BUILDUP phase (5-15 min before onset) adds learnable precursor signal:
+    #   - gradual skin_temp rise
+    #   - gradual HR rise
+    #   - gradual core_temp rise (mirrors real physiology: core temp spike
+    #     precedes sweating by ~5 min in hot flashes)
     in_flash = False
+    in_buildup = False
+    buildup_rem = 0          # steps remaining until flash onset
+    buildup_total = 0        # total steps in this buildup window
+    pending_intensity = 0    # severity chosen at buildup start
     flash_rem = 0
     flash_elapsed = 0
     flash_intensity = 0
@@ -307,30 +317,58 @@ def generate_subject(
         core = core_temp_est[i]
         sw_thresh = 37.2 + itz + rng.normal(0, 0.03)
 
-        # Initiation check
-        if not in_flash and cool_rem <= 0:
+        # Initiation check — only schedule new buildup if fully idle
+        if not in_flash and not in_buildup and cool_rem <= 0:
             circ_mod = 1 + 0.3 * math.cos(((h - 18.4) / 24) * 2 * math.pi)
             sleep_mod = 0.58 if is_sleep[i] else 1.0
             p_sample = 1 - (1 - hourly_prob * circ_mod * sleep_mod) ** (interval_sec / 3600)
             therm_prox = 1.5 if core > (sw_thresh - 0.1) else 1.0
 
             if rng.random() < p_sample * therm_prox:
+                # Pick severity NOW so buildup intensity can scale with it
+                roll = rng.random()
+                if roll < 0.15:
+                    pending_intensity = 1   # very mild
+                elif roll < 0.35:
+                    pending_intensity = 2   # mild
+                elif roll < 0.60:
+                    pending_intensity = 3   # moderate
+                elif roll < 0.82:
+                    pending_intensity = 4   # severe
+                else:
+                    pending_intensity = 5   # very severe
+
+                # Buildup window: 5-15 min, longer for more severe flashes
+                buildup_sec = 300 + pending_intensity * 60 + rng.random() * 300
+                buildup_rem = math.ceil(buildup_sec / interval_sec)
+                buildup_total = buildup_rem
+                in_buildup = True
+
+        # BUILDUP: gradual precursor signal before flash
+        if in_buildup and buildup_rem > 0:
+            # Progress 0 -> 1 as we approach onset
+            prog = 1.0 - (buildup_rem / buildup_total)
+            # Non-linear ramp — accelerates near onset (ease-in curve)
+            ramp = prog ** 1.5
+
+            # Precursor magnitudes scale with eventual severity
+            skin_pre_max = 0.15 + pending_intensity * 0.08   # up to ~0.55°C for sev 5
+            hr_pre_max   = 1.0  + pending_intensity * 0.8    # up to ~5 bpm for sev 5
+            core_pre_max = 0.05 + pending_intensity * 0.04   # up to ~0.25°C for sev 5
+
+            skin_temp[i]    += skin_pre_max * ramp
+            heart_rate[i]   += hr_pre_max * ramp
+            core_temp_est[i] += core_pre_max * ramp
+
+            buildup_rem -= 1
+            if buildup_rem <= 0:
+                # Transition BUILDUP -> FLASH
+                in_buildup = False
                 in_flash = True
                 dur = 60 + rng.random() * 240
                 flash_rem = math.ceil(dur / interval_sec)
                 flash_elapsed = 0
-                # Severity 1–5 (expanded from 1–3)
-                roll = rng.random()
-                if roll < 0.15:
-                    flash_intensity = 1   # very mild
-                elif roll < 0.35:
-                    flash_intensity = 2   # mild
-                elif roll < 0.60:
-                    flash_intensity = 3   # moderate
-                elif roll < 0.82:
-                    flash_intensity = 4   # severe
-                else:
-                    flash_intensity = 5   # very severe
+                flash_intensity = pending_intensity
                 flash_onset_indices.append(i)
 
         if in_flash and flash_rem > 0:

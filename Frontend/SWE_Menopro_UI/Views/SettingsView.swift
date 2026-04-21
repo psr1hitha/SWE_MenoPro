@@ -10,12 +10,10 @@ struct SettingsView: View {
     @State private var isLoggedOut = false
 
     var body: some View {
-        // No NavigationView here — MainTabView's parent NavigationView handles navigation
         ZStack {
             Color(UIColor.systemGroupedBackground).ignoresSafeArea()
 
             List {
-                // MARK: Account
                 Section(header: Text("Account")) {
                     NavigationLink(destination: EditProfileView()) {
                         SettingsRow(icon: "person.fill", label: "Edit Profile")
@@ -30,14 +28,12 @@ struct SettingsView: View {
                     }
                 }
 
-                // MARK: My Data
                 Section(header: Text("My Data")) {
                     NavigationLink(destination: MyDataView()) {
                         SettingsRow(icon: "chart.bar.fill", label: "My Health Info")
                     }
                 }
 
-                // MARK: App Info
                 Section(header: Text("App Info")) {
                     SettingsRow(icon: "info.circle.fill", label: "Version", value: "1.0.0")
                     NavigationLink(destination: PrivacyPolicyView()) {
@@ -52,7 +48,6 @@ struct SettingsView: View {
         }
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.large)
-        // Navigate back to login on logout
         .navigationDestination(isPresented: $isLoggedOut) {
             LoginView().navigationBarBackButtonHidden(true)
         }
@@ -95,6 +90,8 @@ struct MyDataView: View {
     @State private var errorMessage = ""
 
     @State private var age = ""
+    @State private var height = ""
+    @State private var weight = ""
     @State private var bmi = ""
     @State private var isSmoker = ""
     @State private var alcoholPerWeek = ""
@@ -116,6 +113,8 @@ struct MyDataView: View {
                 List {
                     Section(header: Text("Basic Info")) {
                         DataRow(label: "Age", value: age)
+                        DataRow(label: "Height", value: height)
+                        DataRow(label: "Weight", value: weight)
                         DataRow(label: "BMI", value: bmi)
                     }
                     Section(header: Text("Lifestyle")) {
@@ -142,6 +141,18 @@ struct MyDataView: View {
                 isLoading = false
                 if success, let data = data {
                     age             = "\(data["age"] ?? "—")"
+                    // Convert height from meters to cm for display
+                    if let h = data["height"] as? Double {
+                        height = String(format: "%.1f cm", h * 100)
+                    } else {
+                        height = "—"
+                    }
+                    // Weight stored in kg
+                    if let w = data["weight"] as? Double {
+                        weight = String(format: "%.1f kg", w)
+                    } else {
+                        weight = "—"
+                    }
                     bmi             = String(format: "%.1f", (data["bmi"] as? Double) ?? 0)
                     isSmoker        = (data["is_smoker"] as? Bool == true) ? "Yes" : "No"
                     alcoholPerWeek  = "\(data["alcohol_per_week"] ?? "—") times / week"
@@ -190,13 +201,14 @@ struct EditProfileView: View {
     @State private var errorMessage = ""
     @State private var successMessage = ""
 
-    let races = ["Prefer not to say","White","Black or African American","Asian",
-                 "Hispanic or Latino","Native American","Pacific Islander",
-                 "Middle Eastern","Mixed","Other"]
+    let races = ["Prefer not to say", "White", "Black or African American", "Asian",
+                 "Hispanic or Latino", "Native American", "Pacific Islander",
+                 "Middle Eastern", "Mixed", "Other"]
     let timesPerWeek = Array(0...7)
     let heightUnits = ["cm", "ft"]
     let weightUnits = ["kg", "lbs"]
 
+    // Automatically compute BMI from current height and weight inputs
     var computedBMI: Double? {
         guard let h = Double(height), let w = Double(weight), h > 0 else { return nil }
         let hM = heightUnit == "cm" ? h / 100 : h * 0.3048
@@ -329,9 +341,6 @@ struct EditProfileView: View {
         APIService.shared.getProfile { success, data, message in
             DispatchQueue.main.async {
                 isLoading = false
-                print("✅ success: \(success)")
-                print("✅ data: \(String(describing: data))")
-                print("❌ message: \(message)")
                 guard success, let data = data else {
                     errorMessage = message
                     return
@@ -339,6 +348,16 @@ struct EditProfileView: View {
                 firstName       = data["first_name"] as? String ?? ""
                 lastName        = data["last_name"] as? String ?? ""
                 age             = "\(data["age"] ?? "")"
+                // Convert height from meters (stored in DB) to cm for display
+                if let h = data["height"] as? Double {
+                    height = String(format: "%.1f", h * 100)
+                    heightUnit = "cm"
+                }
+                // Weight is stored in kg
+                if let w = data["weight"] as? Double {
+                    weight = String(format: "%.1f", w)
+                    weightUnit = "kg"
+                }
                 isSmoker        = data["is_smoker"] as? Bool ?? false
                 alcoholPerWeek  = data["alcohol_per_week"] as? Int ?? 0
                 caffeinePerWeek = data["caffeine_per_week"] as? Int ?? 0
@@ -360,8 +379,16 @@ struct EditProfileView: View {
             "caffeine_per_week": caffeinePerWeek,
             "race": selectedRace
         ]
-        if let ageInt = Int(age)   { fields["age"] = ageInt }
-        if let bmi = computedBMI   { fields["bmi"] = bmi }
+        if let ageInt = Int(age) { fields["age"] = ageInt }
+
+        // Compute and save height (meters), weight (kg), and BMI together
+        if let h = Double(height), let w = Double(weight), h > 0 {
+            let hM = heightUnit == "cm" ? h / 100 : h * 0.3048
+            let wKg = weightUnit == "kg" ? w : w * 0.453592
+            fields["height"] = hM
+            fields["weight"] = wKg
+            fields["bmi"] = wKg / (hM * hM)
+        }
 
         APIService.shared.updateProfile(fields: fields) { success, message in
             DispatchQueue.main.async {
@@ -509,9 +536,10 @@ struct AboutView: View {
         ZStack {
             Color.appBackground.ignoresSafeArea()
             VStack(spacing: 16) {
-                Image(systemName: "flame.fill")
-                    .font(.system(size: 60))
-                    .foregroundColor(.appPoint)
+                Image("AppLogo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 80, height: 80)
                 Text("Menopro")
                     .font(.title).fontWeight(.bold).foregroundColor(.appPoint)
                 Text("Empowering women through menopause\nwith data-driven insights.")

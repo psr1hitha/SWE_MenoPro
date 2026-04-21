@@ -5,6 +5,24 @@
 
 import Foundation
 
+// Prediction result model returned from /predict endpoint
+struct PredictionResult {
+    let timeToNextHf: Int       // seconds until next hot flash
+    let riskLevel: String       // "Imminent", "Soon", "Moderate", "Low Risk"
+    let skinTempC: Double
+    let heartRate: Int
+}
+
+// History entry model returned from /history endpoint
+struct PredictionHistory: Identifiable {
+    let id = UUID()
+    let timeToNextHf: Int
+    let riskLevel: String
+    let skinTempC: Double
+    let heartRate: Int
+    let timestamp: String
+}
+
 class APIService {
     static let shared = APIService()
 
@@ -19,13 +37,20 @@ class APIService {
         set { UserDefaults.standard.set(newValue, forKey: "auth_token") }
     }
 
+    // ── Email storage — needed to call /predict ──
+    var userEmail: String? {
+        get { UserDefaults.standard.string(forKey: "user_email") }
+        set { UserDefaults.standard.set(newValue, forKey: "user_email") }
+    }
+
     var isLoggedIn: Bool { authToken != nil }
 
     func logout() {
         UserDefaults.standard.removeObject(forKey: "auth_token")
+        UserDefaults.standard.removeObject(forKey: "user_email")
     }
 
-    // ── Build an authorized URLRequest with JWT header ────
+    // ── Build an authorized URLRequest with JWT header ──
     private func authorizedRequest(url: URL, method: String = "GET") -> URLRequest {
         var request = URLRequest(url: url)
         request.httpMethod = method
@@ -36,7 +61,7 @@ class APIService {
         return request
     }
 
-    // ── Parse error detail from server response ───────────
+    // ── Parse error detail from server response ──
     private func parseErrorMessage(from data: Data?) -> String {
         guard let data = data,
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -46,7 +71,7 @@ class APIService {
         return detail
     }
 
-    // ── Sign up ───────────────────────────────────────────
+    // ── Sign up ──
     func signUp(
         firstName: String,
         lastName: String,
@@ -93,11 +118,12 @@ class APIService {
                 return
             }
             if httpResponse.statusCode == 200 {
-                // Save JWT token returned from server
+                // Save JWT token and email returned from server
                 if let data = data,
                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                    let token = json["token"] as? String {
                     self?.authToken = token
+                    self?.userEmail = email
                 }
                 completion(true, "Sign up successful.")
             } else {
@@ -106,7 +132,7 @@ class APIService {
         }.resume()
     }
 
-    // ── Login ─────────────────────────────────────────────
+    // ── Login ──
     func login(
         email: String,
         password: String,
@@ -134,11 +160,12 @@ class APIService {
                 return
             }
             if httpResponse.statusCode == 200 {
-                // Save JWT token returned from server
+                // Save JWT token and email for future authorized requests
                 if let data = data,
                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                    let token = json["token"] as? String {
                     self?.authToken = token
+                    self?.userEmail = email
                 }
                 completion(true, "Login successful.")
             } else {
@@ -147,7 +174,7 @@ class APIService {
         }.resume()
     }
 
-    // ── Get profile ───────────────────────────────────────
+    // ── Get profile ──
     func getProfile(completion: @escaping (Bool, [String: Any]?, String) -> Void) {
         guard let url = URL(string: "\(baseURL)/profile") else {
             completion(false, nil, "Invalid server address.")
@@ -175,7 +202,7 @@ class APIService {
         }.resume()
     }
 
-    // ── Update profile ────────────────────────────────────
+    // ── Update profile ──
     func updateProfile(
         fields: [String: Any],
         completion: @escaping (Bool, String) -> Void
@@ -205,7 +232,99 @@ class APIService {
         }.resume()
     }
 
-    // ── Change password ───────────────────────────────────
+    // ── Predict hot flash using sensor data from Firebase ──
+    // Sends user_email to backend; backend reads sensor data from Firebase Realtime DB
+    func predict(completion: @escaping (Bool, PredictionResult?, String) -> Void) {
+        guard let url = URL(string: "\(baseURL)/predict") else {
+            completion(false, nil, "Invalid server address.")
+            return
+        }
+
+        guard let email = userEmail else {
+            completion(false, nil, "User email not found. Please log in again.")
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        // Only send user_email — sensor data is read from Firebase by the backend
+        let body: [String: Any] = ["user_email": email]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            if let error = error {
+                completion(false, nil, "Network error: \(error.localizedDescription)")
+                return
+            }
+            guard let httpResponse = response as? HTTPURLResponse else {
+                completion(false, nil, "Invalid server response.")
+                return
+            }
+            if httpResponse.statusCode == 200,
+               let data = data,
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                // Parse regression prediction result from response
+                let result = PredictionResult(
+                    timeToNextHf: json["time_to_next_hf"] as? Int ?? 7200,
+                    riskLevel: json["risk_level"] as? String ?? "Low Risk",
+                    skinTempC: json["skin_temp_c"] as? Double ?? 0.0,
+                    heartRate: json["heart_rate"] as? Int ?? 0
+                )
+                completion(true, result, "")
+            } else {
+                completion(false, nil, self?.parseErrorMessage(from: data) ?? "Prediction failed.")
+            }
+        }.resume()
+    }
+
+    // ── Get prediction history ──
+    // Returns the last 20 predictions for the logged-in user
+    func getHistory(completion: @escaping (Bool, [PredictionHistory], String) -> Void) {
+        guard let url = URL(string: "\(baseURL)/history") else {
+            completion(false, [], "Invalid server address.")
+            return
+        }
+
+        let request = authorizedRequest(url: url, method: "GET")
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            if let error = error {
+                completion(false, [], "Network error: \(error.localizedDescription)")
+                return
+            }
+            guard let httpResponse = response as? HTTPURLResponse else {
+                completion(false, [], "Invalid server response.")
+                return
+            }
+            if httpResponse.statusCode == 200,
+               let data = data,
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let predictions = json["predictions"] as? [[String: Any]] {
+                // Map raw JSON array to PredictionHistory models
+                let history = predictions.compactMap { entry -> PredictionHistory? in
+                    guard let timeToNextHf = entry["time_to_next_hf"] as? Int,
+                          let riskLevel = entry["risk_level"] as? String,
+                          let temp = entry["skin_temp_c"] as? Double,
+                          let hr = entry["heart_rate"] as? Int,
+                          let ts = entry["timestamp"] as? String else { return nil }
+                    return PredictionHistory(
+                        timeToNextHf: timeToNextHf,
+                        riskLevel: riskLevel,
+                        skinTempC: temp,
+                        heartRate: hr,
+                        timestamp: ts
+                    )
+                }
+                completion(true, history, "")
+            } else {
+                completion(false, [], self?.parseErrorMessage(from: data) ?? "Failed to load history.")
+            }
+        }.resume()
+    }
+
+    // ── Change password ──
     func changePassword(
         currentPassword: String,
         newPassword: String,

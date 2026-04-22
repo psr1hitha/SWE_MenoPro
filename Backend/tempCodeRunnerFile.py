@@ -11,9 +11,7 @@ import joblib
 from typing import Optional
 
 # Initialize Firebase with both Firestore and Realtime Database
-import os
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-cred = credentials.Certificate(os.path.join(BASE_DIR, "serviceAccount.json"))
+cred = credentials.Certificate("serviceAccount.json")
 firebase_admin.initialize_app(cred, {
     "databaseURL": "https://menopro-a2b17-default-rtdb.firebaseio.com"
 })

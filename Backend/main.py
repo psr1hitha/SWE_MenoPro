@@ -11,7 +11,9 @@ import joblib
 from typing import Optional
 
 # Initialize Firebase with both Firestore and Realtime Database
-cred = credentials.Certificate("serviceAccount.json")
+import os
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+cred = credentials.Certificate(os.path.join(BASE_DIR, "serviceAccount.json"))
 firebase_admin.initialize_app(cred, {
     "databaseURL": "https://menopro-a2b17-default-rtdb.firebaseio.com"
 })
@@ -73,6 +75,17 @@ RACE_MAP = {
     "Other": 9,
     "Prefer not to say": 0,
 }
+
+# ── Convert predicted seconds to risk level for the app ──
+def seconds_to_risk_level(seconds: float) -> str:
+    if seconds <= 300:
+        return "Imminent"      # Hot flash within 5 minutes
+    elif seconds <= 900:
+        return "Soon"          # Hot flash within 15 minutes
+    elif seconds <= 1800:
+        return "Moderate"      # Hot flash within 30 minutes
+    else:
+        return "Low Risk"      # Hot flash not expected soon
 
 # ── JWT helpers ───
 def create_token(email: str) -> str:
@@ -168,7 +181,7 @@ def predict(data: PredictRequest):
     temp_data = temp_ref.get()
     hr_data = hr_ref.get()
 
-    # Validate sensor data exists
+    # Validate sensor data exists in Firebase
     if temp_data is None or hr_data is None:
         raise HTTPException(status_code=503, detail="Sensor data not available. Make sure Arduino is running.")
 
@@ -205,8 +218,8 @@ def predict(data: PredictRequest):
         0,                                          # subject_id (placeholder)
         0,                                          # t_sec (placeholder)
         current_hour,                               # hour
-        skin_temp_c,                                # skin_temp (Celsius, read directly from Arduino)
-        heart_rate,                                 # heart_rate
+        skin_temp_c,                                # skin_temp in Celsius
+        heart_rate,                                 # heart_rate in BPM
         37.0,                                       # core_temp_est (clinical default)
         is_sleep,                                   # is_sleep
         user.get("age", 0),                         # s_age
@@ -226,7 +239,7 @@ def predict(data: PredictRequest):
         0,                                          # s_surgical (not collected)
     ]
 
-    # Load the trained model and scaler from disk
+    # Load the trained regression model and scaler from disk
     base_dir = os.path.dirname(os.path.abspath(__file__))
     model_path = os.path.join(base_dir, "rf_model.pkl")
     scaler_path = os.path.join(base_dir, "scaler.pkl")
@@ -237,26 +250,30 @@ def predict(data: PredictRequest):
     model = joblib.load(model_path)
     scaler = joblib.load(scaler_path)
 
-    # Scale input and run inference
+    # Scale input features and run regression inference
     X = np.array(features).reshape(1, -1)
     X_scaled = scaler.transform(X)
 
-    prediction = model.predict(X_scaled)[0]
-    probability = model.predict_proba(X_scaled)[0][1]  # probability of hot flash (class 1)
+    # Regression model returns seconds until next hot flash
+    time_to_next_hf = float(model.predict(X_scaled)[0])
+    time_to_next_hf = max(0.0, min(time_to_next_hf, 7200.0))  # clamp to [0, 7200]
+
+    # Convert seconds to human-readable risk level
+    risk_level = seconds_to_risk_level(time_to_next_hf)
 
     # Save prediction result to Firestore for history tracking
     db.collection("predictions").add({
         "user_email": data.user_email,
         "skin_temp_c": round(skin_temp_c, 2),
         "heart_rate": heart_rate,
-        "hot_flash_predicted": bool(prediction),
-        "probability": round(float(probability), 4),
+        "time_to_next_hf": round(time_to_next_hf),
+        "risk_level": risk_level,
         "timestamp": datetime.datetime.utcnow()
     })
 
     return {
-        "hot_flash_predicted": bool(prediction),
-        "probability": float(probability),
+        "time_to_next_hf": round(time_to_next_hf),
+        "risk_level": risk_level,
         "skin_temp_c": round(skin_temp_c, 2),
         "heart_rate": heart_rate,
     }

@@ -7,8 +7,9 @@ import Foundation
 
 // Prediction result model returned from /predict endpoint
 struct PredictionResult {
-    let timeToNextHf: Int       // seconds until next hot flash
+    let riskPercent: Int
     let riskLevel: String       // "Imminent", "Soon", "Moderate", "Low Risk"
+    let message: String
     let skinTempC: Double
     let heartRate: Int
 }
@@ -16,7 +17,7 @@ struct PredictionResult {
 // History entry model returned from /history endpoint
 struct PredictionHistory: Identifiable {
     let id = UUID()
-    let timeToNextHf: Int
+    let riskPercent: Int
     let riskLevel: String
     let skinTempC: Double
     let heartRate: Int
@@ -26,18 +27,16 @@ struct PredictionHistory: Identifiable {
 class APIService {
     static let shared = APIService()
 
-    // Local testing: 127.0.0.1:8000
-    // Replace with your deployed server URL in production
-    let baseURL = "http://127.0.0.1:8000"
+    // Local testing — update to your Mac's current LAN IP
+    // Find with: ifconfig | grep "inet " | grep -v 127.0.0.1
+    let baseURL = "http://10.173.181.106:8000"
 
     // ── Token storage (UserDefaults — suitable for prototype) ──
-    // For production, replace with Keychain storage
     var authToken: String? {
         get { UserDefaults.standard.string(forKey: "auth_token") }
         set { UserDefaults.standard.set(newValue, forKey: "auth_token") }
     }
 
-    // ── Email storage — needed to call /predict ──
     var userEmail: String? {
         get { UserDefaults.standard.string(forKey: "user_email") }
         set { UserDefaults.standard.set(newValue, forKey: "user_email") }
@@ -78,6 +77,8 @@ class APIService {
         email: String,
         password: String,
         age: Int,
+        height: Double,
+        weight: Double,
         bmi: Double,
         isSmoker: Bool,
         alcoholPerWeek: Int,
@@ -100,6 +101,8 @@ class APIService {
             "email": email,
             "password": password,
             "age": age,
+            "height": height,
+            "weight": weight,
             "bmi": bmi,
             "is_smoker": isSmoker,
             "alcohol_per_week": alcoholPerWeek,
@@ -118,7 +121,6 @@ class APIService {
                 return
             }
             if httpResponse.statusCode == 200 {
-                // Save JWT token and email returned from server
                 if let data = data,
                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                    let token = json["token"] as? String {
@@ -160,7 +162,6 @@ class APIService {
                 return
             }
             if httpResponse.statusCode == 200 {
-                // Save JWT token and email for future authorized requests
                 if let data = data,
                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                    let token = json["token"] as? String {
@@ -232,8 +233,7 @@ class APIService {
         }.resume()
     }
 
-    // ── Predict hot flash using sensor data from Firebase ──
-    // Sends user_email to backend; backend reads sensor data from Firebase Realtime DB
+    // ── Predict hot flash ──
     func predict(completion: @escaping (Bool, PredictionResult?, String) -> Void) {
         guard let url = URL(string: "\(baseURL)/predict") else {
             completion(false, nil, "Invalid server address.")
@@ -249,7 +249,6 @@ class APIService {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        // Only send user_email — sensor data is read from Firebase by the backend
         let body: [String: Any] = ["user_email": email]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
@@ -265,10 +264,17 @@ class APIService {
             if httpResponse.statusCode == 200,
                let data = data,
                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                // Parse regression prediction result from response
+
+                if let status = json["status"] as? String, status == "calibrating" {
+                    let msg = json["message"] as? String ?? "Calibrating sensors..."
+                    completion(false, nil, msg)
+                    return
+                }
+
                 let result = PredictionResult(
-                    timeToNextHf: json["time_to_next_hf"] as? Int ?? 7200,
+                    riskPercent: json["risk_percent"] as? Int ?? 0,
                     riskLevel: json["risk_level"] as? String ?? "Low Risk",
+                    message: json["message"] as? String ?? "",
                     skinTempC: json["skin_temp_c"] as? Double ?? 0.0,
                     heartRate: json["heart_rate"] as? Int ?? 0
                 )
@@ -280,7 +286,6 @@ class APIService {
     }
 
     // ── Get prediction history ──
-    // Returns the last 20 predictions for the logged-in user
     func getHistory(completion: @escaping (Bool, [PredictionHistory], String) -> Void) {
         guard let url = URL(string: "\(baseURL)/history") else {
             completion(false, [], "Invalid server address.")
@@ -302,15 +307,15 @@ class APIService {
                let data = data,
                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let predictions = json["predictions"] as? [[String: Any]] {
-                // Map raw JSON array to PredictionHistory models
+
                 let history = predictions.compactMap { entry -> PredictionHistory? in
-                    guard let timeToNextHf = entry["time_to_next_hf"] as? Int,
+                    guard let riskPercent = entry["risk_percent"] as? Int,
                           let riskLevel = entry["risk_level"] as? String,
                           let temp = entry["skin_temp_c"] as? Double,
                           let hr = entry["heart_rate"] as? Int,
                           let ts = entry["timestamp"] as? String else { return nil }
                     return PredictionHistory(
-                        timeToNextHf: timeToNextHf,
+                        riskPercent: riskPercent,
                         riskLevel: riskLevel,
                         skinTempC: temp,
                         heartRate: hr,
@@ -355,6 +360,99 @@ class APIService {
                 completion(true, "Password changed successfully.")
             } else {
                 completion(false, self?.parseErrorMessage(from: data) ?? "Failed to change password.")
+            }
+        }.resume()
+    }
+
+    // ═══════════════════════════════════════════════════
+    //  HOT FLASH EVENTS (Calendar)
+    // ═══════════════════════════════════════════════════
+
+    // ── Get all dates with hot flashes (auto + manual) ──
+    func getHotFlashDates(completion: @escaping (Bool, [String], String) -> Void) {
+        guard let url = URL(string: "\(baseURL)/hot-flash-events") else {
+            completion(false, [], "Invalid server address.")
+            return
+        }
+        let request = authorizedRequest(url: url, method: "GET")
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            if let error = error {
+                completion(false, [], "Network error: \(error.localizedDescription)")
+                return
+            }
+            guard let httpResponse = response as? HTTPURLResponse else {
+                completion(false, [], "Invalid server response.")
+                return
+            }
+            if httpResponse.statusCode == 200,
+               let data = data,
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let dates = json["dates"] as? [String] {
+                completion(true, dates, "")
+            } else {
+                completion(false, [], self?.parseErrorMessage(from: data) ?? "Failed to load events.")
+            }
+        }.resume()
+    }
+
+    // ── Log a hot flash for a given date (or today if nil) ──
+    func logHotFlash(date: String? = nil,
+                     note: String? = nil,
+                     completion: @escaping (Bool, String) -> Void) {
+        guard let url = URL(string: "\(baseURL)/hot-flash-events") else {
+            completion(false, "Invalid server address.")
+            return
+        }
+        guard let email = userEmail else {
+            completion(false, "Not logged in.")
+            return
+        }
+
+        var request = authorizedRequest(url: url, method: "POST")
+        var body: [String: Any] = ["user_email": email]
+        if let date = date { body["date"] = date }
+        if let note = note { body["note"] = note }
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            if let error = error {
+                completion(false, "Network error: \(error.localizedDescription)")
+                return
+            }
+            guard let httpResponse = response as? HTTPURLResponse else {
+                completion(false, "Invalid server response.")
+                return
+            }
+            if httpResponse.statusCode == 200 {
+                completion(true, "Logged.")
+            } else {
+                completion(false, self?.parseErrorMessage(from: data) ?? "Failed to log.")
+            }
+        }.resume()
+    }
+
+    // ── Unlog a hot flash for a given date ──
+    func unlogHotFlash(date: String, completion: @escaping (Bool, String) -> Void) {
+        guard let url = URL(string: "\(baseURL)/hot-flash-events/\(date)") else {
+            completion(false, "Invalid server address.")
+            return
+        }
+        let request = authorizedRequest(url: url, method: "DELETE")
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            if let error = error {
+                completion(false, "Network error: \(error.localizedDescription)")
+                return
+            }
+            guard let httpResponse = response as? HTTPURLResponse else {
+                completion(false, "Invalid server response.")
+                return
+            }
+            if httpResponse.statusCode == 200 {
+                completion(true, "Unlogged.")
+            } else {
+                completion(false, self?.parseErrorMessage(from: data) ?? "Failed to unlog.")
             }
         }.resume()
     }

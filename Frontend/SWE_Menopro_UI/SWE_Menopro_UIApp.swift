@@ -7,12 +7,25 @@
 
 import SwiftUI
 
-
 @main
 struct SWE_Menopro_UIApp: App {
+    @State private var showSplash = true
+
     var body: some Scene {
         WindowGroup {
-            SplashView() 
+            ZStack {
+                if showSplash {
+                    SplashView(onFinished: {
+                        withAnimation(.easeInOut(duration: 0.4)) {
+                            showSplash = false
+                        }
+                    })
+                    .transition(.opacity)
+                } else {
+                    LoginView()
+                        .transition(.opacity)
+                }
+            }
         }
     }
 }

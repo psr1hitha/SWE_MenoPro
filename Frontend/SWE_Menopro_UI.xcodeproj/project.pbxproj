@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		645004222F9F438800AD5C5C /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 645004212F9F438400AD5C5C /* Theme.swift */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		FF4D1DE92F85FDE300F11DA7 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -24,6 +28,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		645004212F9F438400AD5C5C /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		FF4D1DDB2F85FDE000F11DA7 /* SWE_Menopro_UI.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SWE_Menopro_UI.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		FF4D1DE82F85FDE300F11DA7 /* SWE_Menopro_UITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SWE_Menopro_UITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		FF4D1DF22F85FDE300F11DA7 /* SWE_Menopro_UIUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SWE_Menopro_UIUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -75,6 +80,7 @@
 		FF4D1DD22F85FDE000F11DA7 = {
 			isa = PBXGroup;
 			children = (
+				645004212F9F438400AD5C5C /* Theme.swift */,
 				FF4D1DDD2F85FDE000F11DA7 /* SWE_Menopro_UI */,
 				FF4D1DEB2F85FDE300F11DA7 /* SWE_Menopro_UITests */,
 				FF4D1DF52F85FDE300F11DA7 /* SWE_Menopro_UIUITests */,
@@ -236,6 +242,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				645004222F9F438800AD5C5C /* Theme.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -395,7 +402,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = F623A8GMUX;
+				DEVELOPMENT_TEAM = XD88PC3785;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "SWE-Menopro-UI-Info.plist";
@@ -426,7 +433,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = F623A8GMUX;
+				DEVELOPMENT_TEAM = XD88PC3785;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "SWE-Menopro-UI-Info.plist";

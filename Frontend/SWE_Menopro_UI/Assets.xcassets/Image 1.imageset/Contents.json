@@ -1,17 +1,14 @@
 {
   "images" : [
     {
-      "filename" : "MenoProAppIcon.png",
       "idiom" : "universal",
       "scale" : "1x"
     },
     {
-      "filename" : "MenoProAppIcon-Dark.png",
       "idiom" : "universal",
       "scale" : "2x"
     },
     {
-      "filename" : "MenoProAppIcon-Tinted.png",
       "idiom" : "universal",
       "scale" : "3x"
     }

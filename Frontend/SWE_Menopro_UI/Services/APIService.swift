@@ -29,7 +29,7 @@ class APIService {
 
     // Local testing — update to your Mac's current LAN IP
     // Find with: ifconfig | grep "inet " | grep -v 127.0.0.1
-    let baseURL = "http://10.173.181.106:8000"
+    let baseURL = "http://127.0.0.1:8000"
 
     // ── Token storage (UserDefaults — suitable for prototype) ──
     var authToken: String? {
@@ -84,6 +84,15 @@ class APIService {
         alcoholPerWeek: Int,
         caffeinePerWeek: Int,
         race: String,
+        menopauseStage: Int,
+        stressLevel: Int,
+        medication: Int,
+        exerciseLevel: Int,
+        thyroid: Bool,
+        diabetes: Bool,
+        cardiovascular: Bool,
+        mentalHealth: Bool,
+        surgical: Bool,
         completion: @escaping (Bool, String) -> Void
     ) {
         guard let url = URL(string: "\(baseURL)/signup") else {
@@ -107,7 +116,16 @@ class APIService {
             "is_smoker": isSmoker,
             "alcohol_per_week": alcoholPerWeek,
             "caffeine_per_week": caffeinePerWeek,
-            "race": race
+            "race": race,
+            "menopause_stage": menopauseStage,
+            "stress_level": stressLevel,
+            "medication": medication,
+            "exercise_level": exerciseLevel,
+            "thyroid": thyroid,
+            "diabetes": diabetes,
+            "cardiovascular": cardiovascular,
+            "mental_health": mentalHealth,
+            "surgical": surgical
         ]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 

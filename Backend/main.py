@@ -62,7 +62,15 @@ class SignUpRequest(BaseModel):
     caffeine_per_week: int
     race: str
     display_name: Optional[str] = None  # for community chat
-
+    menopause_stage: Optional[int] = 2
+    stress_level: Optional[int] = 1
+    medication: Optional[int] = 0
+    exercise_level: Optional[int] = 2
+    thyroid: Optional[bool] = False
+    diabetes: Optional[bool] = False
+    cardiovascular: Optional[bool] = False
+    mental_health: Optional[bool] = False
+    surgical: Optional[bool] = False
 
 class LoginRequest(BaseModel):
     email: str
@@ -298,6 +306,15 @@ def signup(data: SignUpRequest):
         "caffeine_per_week": data.caffeine_per_week,
         "race": data.race,
         "display_name": data.display_name or data.first_name,
+        "menopause_stage": data.menopause_stage,
+        "stress_level": data.stress_level,
+        "medication": data.medication,
+        "exercise_level": data.exercise_level,
+        "thyroid": data.thyroid,
+        "diabetes": data.diabetes,
+        "cardiovascular": data.cardiovascular,
+        "mental_health": data.mental_health,
+        "surgical": data.surgical,
     })
     return {"message": "Signup successful", "token": create_token(data.email)}
 

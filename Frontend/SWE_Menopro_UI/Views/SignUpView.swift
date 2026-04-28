@@ -25,6 +25,15 @@ struct SignUpView: View {
     @State private var caffeinePerWeek = 0
     @State private var selectedRace = "Prefer not to say"
     @State private var hasAgreedToTerms = false
+    @State private var menopauseStage = 2
+    @State private var stressLevel = 1
+    @State private var medication = 0
+    @State private var exerciseLevel = 2
+    @State private var hasThyroid = false
+    @State private var hasDiabetes = false
+    @State private var hasCardiovascular = false
+    @State private var hasMentalHealth = false
+    @State private var hasSurgical = false
 
     // Submission state
     @State private var isSubmitting = false
@@ -46,6 +55,11 @@ struct SignUpView: View {
     let timesPerWeek = Array(0...7)
     let heightUnits = ["cm", "ft"]
     let weightUnits = ["kg", "lbs"]
+    
+    let menopauseStages = ["Early Perimenopause", "Late Perimenopause", "Early Postmenopause (0-2y)", "Late Postmenopause (2-5y)", "Late Postmenopause (5y+)"]
+    let stressLevels = ["Low", "Moderate", "High"]
+    let medications = ["None", "SSRIs/SNRIs", "Tamoxifen", "Aromatase Inhibitors", "GnRH Agonists", "Beta Blockers", "Opioids", "Anticholinergics", "HRT (Estrogen)", "Fezolinetant"]
+    let exerciseLevels = ["Sedentary", "Light", "Moderate", "High"]
 
     var bmi: String {
         guard let h = Double(height), let w = Double(weight), h > 0 else {
@@ -255,6 +269,83 @@ struct SignUpView: View {
                         .padding(.vertical, 12)
                     }
 
+                    // MARK: - Health Profile
+                    sectionHeader("HEALTH PROFILE")
+                    inputCard {
+                        HStack {
+                            Text("Menopause Stage")
+                            Spacer()
+                            Picker("", selection: $menopauseStage) {
+                                ForEach(0..<menopauseStages.count, id: \.self) { i in
+                                    Text(menopauseStages[i]).tag(i)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        rowDivider()
+                        HStack {
+                            Text("Stress Level")
+                            Spacer()
+                            Picker("", selection: $stressLevel) {
+                                ForEach(0..<stressLevels.count, id: \.self) { i in
+                                    Text(stressLevels[i]).tag(i)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        rowDivider()
+                        HStack {
+                            Text("Medication")
+                            Spacer()
+                            Picker("", selection: $medication) {
+                                ForEach(0..<medications.count, id: \.self) { i in
+                                    Text(medications[i]).tag(i)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        rowDivider()
+                        HStack {
+                            Text("Exercise Level")
+                            Spacer()
+                            Picker("", selection: $exerciseLevel) {
+                                ForEach(0..<exerciseLevels.count, id: \.self) { i in
+                                    Text(exerciseLevels[i]).tag(i)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        rowDivider()
+                        Toggle("Thyroid Condition", isOn: $hasThyroid)
+                            .tint(.appPoint)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                        rowDivider()
+                        Toggle("Diabetes", isOn: $hasDiabetes)
+                            .tint(.appPoint)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                        rowDivider()
+                        Toggle("Cardiovascular Condition", isOn: $hasCardiovascular)
+                            .tint(.appPoint)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                        rowDivider()
+                        Toggle("Mental Health Condition", isOn: $hasMentalHealth)
+                            .tint(.appPoint)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                        rowDivider()
+                        Toggle("Surgical Menopause", isOn: $hasSurgical)
+                            .tint(.appPoint)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                    }
+                
                     // MARK: - Privacy Disclaimer
                     VStack(alignment: .leading, spacing: 10) {
                         Text("⚠️ Entering inaccurate information may result in less accurate predictions.")
@@ -364,8 +455,17 @@ struct SignUpView: View {
             isSmoker: isSmoker,
             alcoholPerWeek: alcoholPerWeek,
             caffeinePerWeek: caffeinePerWeek,
-            race: selectedRace
-        ) { success, message in
+            race: selectedRace,
+            menopauseStage: menopauseStage,
+            stressLevel: stressLevel,
+            medication: medication,
+            exerciseLevel: exerciseLevel,
+            thyroid: hasThyroid,
+            diabetes: hasDiabetes,
+            cardiovascular: hasCardiovascular,
+            mentalHealth: hasMentalHealth,
+            surgical: hasSurgical
+        ){ success, message in
             DispatchQueue.main.async {
                 isSubmitting = false
                 if success {

@@ -29,7 +29,7 @@ class APIService {
 
     // Local testing — update to your Mac's current LAN IP
     // Find with: ifconfig | grep "inet " | grep -v 127.0.0.1
-    let baseURL = "http://127.0.0.1:8000"
+    let baseURL = "http://localhost:8000"
 
     // ── Token storage (UserDefaults — suitable for prototype) ──
     var authToken: String? {
@@ -50,7 +50,7 @@ class APIService {
     }
 
     // ── Build an authorized URLRequest with JWT header ──
-    private func authorizedRequest(url: URL, method: String = "GET") -> URLRequest {
+    func authorizedRequest(url: URL, method: String = "GET") -> URLRequest {
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -61,7 +61,7 @@ class APIService {
     }
 
     // ── Parse error detail from server response ──
-    private func parseErrorMessage(from data: Data?) -> String {
+    func parseErrorMessage(from data: Data?) -> String {
         guard let data = data,
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let detail = json["detail"] as? String else {

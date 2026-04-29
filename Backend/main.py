@@ -525,3 +525,292 @@ def get_hot_flash_events(email: str = Depends(get_current_user)):
                 dates.add(str(ts)[:10])
 
     return {"dates": sorted(dates)}
+
+# ═════════════════════════════════════════════════════
+#               COMMUNITY — REQUEST MODELS
+# ═════════════════════════════════════════════════════
+
+class CreatePostRequest(BaseModel):
+    title: str
+    body: str
+    is_anonymous: bool = False
+
+
+class UpdatePostRequest(BaseModel):
+    title: Optional[str] = None
+    body: Optional[str] = None
+    is_anonymous: Optional[bool] = None
+
+class CreateCommentRequest(BaseModel):
+    post_id: str
+    body: str
+    is_anonymous: bool = False
+
+
+class ReportRequest(BaseModel):
+    target_id: str          # post or comment doc ID
+    target_type: str        # "post" or "comment"
+    reason: Optional[str] = None
+
+
+# ═════════════════════════════════════════════════════
+#               COMMUNITY — HELPERS
+# ═════════════════════════════════════════════════════
+
+def _resolve_display_name(user: dict, is_anonymous: bool) -> str:
+    """Return the author label based on anonymity choice."""
+    if is_anonymous:
+        return "Anonymous"
+    return user.get("display_name") or user.get("first_name") or "User"
+
+
+def _serialize_post(doc, viewer_email: str = "") -> dict:
+    d = doc.to_dict()
+    d["id"] = doc.id
+    if "created_at" in d and d["created_at"]:
+        d["created_at"] = d["created_at"].isoformat()
+    if "updated_at" in d and d["updated_at"]:
+        d["updated_at"] = d["updated_at"].isoformat()
+    # Check is_owner BEFORE removing author_email
+    d["is_owner"] = (viewer_email != "" and viewer_email == d.get("author_email", ""))
+    d["liked_by_viewer"] = viewer_email in d.get("liked_by", [])
+    d.pop("liked_by", None)
+    # Remove author_email only for anonymous posts AFTER is_owner is set
+    if d.get("is_anonymous"):
+        d.pop("author_email", None)
+    return d
+
+
+def _serialize_comment(doc, viewer_email: str = "") -> dict:
+    d = doc.to_dict()
+    d["id"] = doc.id
+    if "created_at" in d and d["created_at"]:
+        d["created_at"] = d["created_at"].isoformat()
+    # Check is_owner BEFORE removing author_email
+    d["is_owner"] = (viewer_email != "" and viewer_email == d.get("author_email", ""))
+    # Remove author_email only for anonymous comments AFTER is_owner is set
+    if d.get("is_anonymous"):
+        d.pop("author_email", None)
+    return d
+
+
+# ═════════════════════════════════════════════════════
+#               COMMUNITY — ENDPOINTS
+# ═════════════════════════════════════════════════════
+
+# ── Create post ──
+@app.post("/community/posts")
+def create_post(data: CreatePostRequest, email: str = Depends(get_current_user)):
+    user_doc = get_user_doc(email)
+    user = user_doc.to_dict()
+
+    display_name = _resolve_display_name(user, data.is_anonymous)
+
+    _, ref = db.collection("community_posts").add({
+        "title": data.title,
+        "body": data.body,
+        "is_anonymous": data.is_anonymous,
+        "author_email": email,
+        "author_name": display_name,
+        "like_count": 0,
+        "liked_by": [],
+        "comment_count": 0,
+        "created_at": datetime.datetime.utcnow(),
+        "updated_at": datetime.datetime.utcnow(),
+    })
+    return {"message": "Post created", "post_id": ref.id}
+
+
+# ── Get feed ──
+@app.get("/community/posts")
+def get_posts(
+    limit: int = 20,
+    author_me: bool = False,
+    email: str = Depends(get_current_user),
+):
+    query = db.collection("community_posts").order_by(
+        "created_at", direction=firestore.Query.DESCENDING
+    )
+    if author_me:
+        query = query.where("author_email", "==", email)
+
+    docs = query.limit(limit).get()
+    return {"posts": [_serialize_post(d, email) for d in docs]}
+
+
+# ── Get single post ──
+@app.get("/community/posts/{post_id}")
+def get_post(post_id: str, email: str = Depends(get_current_user)):
+    doc = db.collection("community_posts").document(post_id).get()
+    if not doc.exists:
+        raise HTTPException(status_code=404, detail="Post not found")
+    return _serialize_post(doc, email)
+
+
+# ── Update post (owner only) ──
+@app.patch("/community/posts/{post_id}")
+def update_post(
+    post_id: str,
+    data: UpdatePostRequest,
+    email: str = Depends(get_current_user),
+):
+    doc = db.collection("community_posts").document(post_id).get()
+    if not doc.exists:
+        raise HTTPException(status_code=404, detail="Post not found")
+    if doc.to_dict().get("author_email") != email:
+        raise HTTPException(status_code=403, detail="Not your post")
+
+    # Use exclude_unset=True so only fields actually sent are updated
+    updates = data.dict(exclude_unset=False)
+    # Remove None values but keep False (is_anonymous can be False)
+    updates = {k: v for k, v in updates.items() if v is not None}
+
+    # Always include title and body if provided
+    if data.title is not None:
+        updates["title"] = data.title
+    if data.body is not None:
+        updates["body"] = data.body
+
+    # If anonymity changed, update author_name accordingly
+    if data.is_anonymous is not None:
+        user = get_user_doc(email).to_dict()
+        updates["is_anonymous"] = data.is_anonymous
+        updates["author_name"] = _resolve_display_name(user, data.is_anonymous)
+
+    updates["updated_at"] = datetime.datetime.utcnow()
+    doc.reference.update(updates)
+    return {"message": "Post updated"}
+
+
+# ── Delete post (owner only) ──
+@app.delete("/community/posts/{post_id}")
+def delete_post(post_id: str, email: str = Depends(get_current_user)):
+    doc = db.collection("community_posts").document(post_id).get()
+    if not doc.exists:
+        raise HTTPException(status_code=404, detail="Post not found")
+    if doc.to_dict().get("author_email") != email:
+        raise HTTPException(status_code=403, detail="Not your post")
+
+    # Also delete all comments for this post
+    comments = db.collection("community_comments").where("post_id", "==", post_id).get()
+    for c in comments:
+        c.reference.delete()
+
+    doc.reference.delete()
+    return {"message": "Post deleted"}
+
+
+# ── Like toggle ──
+@app.post("/community/posts/{post_id}/like")
+def toggle_like(post_id: str, email: str = Depends(get_current_user)):
+    ref = db.collection("community_posts").document(post_id)
+    doc = ref.get()
+    if not doc.exists:
+        raise HTTPException(status_code=404, detail="Post not found")
+
+    liked_by: list = doc.to_dict().get("liked_by", [])
+    if email in liked_by:
+        liked_by.remove(email)
+        liked = False
+    else:
+        liked_by.append(email)
+        liked = True
+
+    ref.update({"liked_by": liked_by, "like_count": len(liked_by)})
+    return {"liked": liked, "like_count": len(liked_by)}
+
+
+# ── Get comments for a post ──
+@app.get("/community/posts/{post_id}/comments")
+def get_comments(post_id: str, email: str = Depends(get_current_user)):
+    docs = (
+        db.collection("community_comments")
+        .where("post_id", "==", post_id)
+        .order_by("created_at", direction=firestore.Query.ASCENDING)
+        .get()
+    )
+    return {"comments": [_serialize_comment(d, email) for d in docs]}
+
+
+# ── Create comment ──
+@app.post("/community/posts/{post_id}/comments")
+def create_comment(
+    post_id: str,
+    data: CreateCommentRequest,
+    email: str = Depends(get_current_user),
+):
+    post_ref = db.collection("community_posts").document(post_id)
+    post_doc = post_ref.get()
+    if not post_doc.exists:
+        raise HTTPException(status_code=404, detail="Post not found")
+
+    user = get_user_doc(email).to_dict()
+    display_name = _resolve_display_name(user, data.is_anonymous)
+
+    db.collection("community_comments").add({
+        "post_id": post_id,
+        "body": data.body,
+        "is_anonymous": data.is_anonymous,
+        "author_email": email,
+        "author_name": display_name,
+        "created_at": datetime.datetime.utcnow(),
+    })
+
+    # Increment comment_count on the post
+    post_ref.update({"comment_count": firestore.Increment(1)})
+    return {"message": "Comment added"}
+
+
+# ── Delete comment (owner only) ──
+@app.delete("/community/comments/{comment_id}")
+def delete_comment(comment_id: str, email: str = Depends(get_current_user)):
+    doc = db.collection("community_comments").document(comment_id).get()
+    if not doc.exists:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    if doc.to_dict().get("author_email") != email:
+        raise HTTPException(status_code=403, detail="Not your comment")
+
+    post_id = doc.to_dict().get("post_id")
+    doc.reference.delete()
+
+    # Decrement comment_count
+    if post_id:
+        post_ref = db.collection("community_posts").document(post_id)
+        post_ref.update({"comment_count": firestore.Increment(-1)})
+
+    return {"message": "Comment deleted"}
+
+
+# ── Report ──
+@app.post("/community/reports")
+def report_content(data: ReportRequest, email: str = Depends(get_current_user)):
+    # Prevent duplicate reports from same user on same target
+    existing = (
+        db.collection("community_reports")
+        .where("reporter_email", "==", email)
+        .where("target_id", "==", data.target_id)
+        .get()
+    )
+    if existing:
+        raise HTTPException(status_code=400, detail="Already reported")
+
+    db.collection("community_reports").add({
+        "reporter_email": email,
+        "target_id": data.target_id,
+        "target_type": data.target_type,
+        "reason": data.reason or "",
+        "created_at": datetime.datetime.utcnow(),
+    })
+    return {"message": "Reported"}
+
+
+# ── My posts ──
+@app.get("/community/my-posts")
+def get_my_posts(email: str = Depends(get_current_user)):
+    docs = (
+        db.collection("community_posts")
+        .where("author_email", "==", email)
+        .order_by("created_at", direction=firestore.Query.DESCENDING)
+        .get()
+    )
+    return {"posts": [_serialize_post(d, email) for d in docs]}
